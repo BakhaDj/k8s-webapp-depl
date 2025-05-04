@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+  namespace: default
+spec:
+  replicas: 4 # Допустим, базовое количество подов для пиковой нагрузки
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      # Здесь надо бы распределить поды по разным нодам для отказоустойчивости
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: webapp
+              topologyKey: kubernetes.io/hostname
+      # Тут распределим поды по зонам - по 3 зоны в кластере
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: webapp
+      containers:
+      - name: webapp
+        image: nginx:1.14.2 # В рил тайме образ приложения
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "0.1" # Минимальное потребление CPU после инициализации
+            memory: "128Mi" # Постоянное потребление памяти
+          limits:
+            cpu: "1" # Пик CPU на старте
+            memory: "256Mi" # Запас на пики памяти
+        # Проверяем, что приложение готово принимать трафик
+        readinessProbe:
+          httpGet:
+            path: /health # Допустим endpoint для проверки
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        # До 15 секунд на запуск
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 3
